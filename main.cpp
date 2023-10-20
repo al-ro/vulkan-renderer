@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <vector>
 
@@ -35,18 +36,20 @@ VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
 void DestroyDebugUtilsMessengerEXT(VkInstance instance,
                                    VkDebugUtilsMessengerEXT debugMessenger,
                                    const VkAllocationCallbacks* pAllocator) {
-  auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
-      instance, "vkDestroyDebugUtilsMessengerEXT");
+  auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
   if (func != nullptr) {
     func(instance, debugMessenger, pAllocator);
   }
 }
 
 struct QueueFamilyIndices {
+  // Index of queue family which supports graphics commands
   std::optional<uint32_t> graphicsFamily;
+  // Index of queue family which supports presentation
+  std::optional<uint32_t> presentFamily;
 
   bool isComplete() {
-    return graphicsFamily.has_value();
+    return graphicsFamily.has_value() && presentFamily.has_value();
   }
 };
 
@@ -63,12 +66,17 @@ class HelloTriangleApplication {
   GLFWwindow* window;
   VkInstance instance;
   VkDebugUtilsMessengerEXT debugMessenger;
+
   // Destroyed automatically with instance
   VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
   // Logical device
   VkDevice device;
+
   // Created and destroyed automatically with logical device
   VkQueue graphicsQueue;
+  VkQueue presentQueue;
+
+  VkSurfaceKHR surface;
 
   /*----- GLFW  -----*/
 
@@ -79,7 +87,7 @@ class HelloTriangleApplication {
     // Disable window resizing
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
-    window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+    window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan Renderer", nullptr, nullptr);
   }
 
   /*----- Extension and validation layer tests -----*/
@@ -92,15 +100,13 @@ class HelloTriangleApplication {
     vkEnumerateInstanceExtensionProperties(nullptr, &count, availableExtensions.data());
 
     // Throw an exception if a required extension is not available
-    for (auto const& r : requiredExtensionNames) {
-      auto position = std::find_if(availableExtensions.begin(),
-                                   availableExtensions.end(),
-                                   [r](VkExtensionProperties p) { return p.extensionName == std::string(r); });
-
+    for (auto const& n : requiredExtensionNames) {
+      auto position = std::find_if(availableExtensions.begin(), availableExtensions.end(),
+                                   [n](auto const& p) { return p.extensionName == std::string(n); });
       if (position == availableExtensions.end()) {
-        throw std::runtime_error("Required extension " + std::string(r) + " is not supported.");
+        throw std::runtime_error("Required extension " + std::string(n) + " is not supported.");
       } else {
-        std::cout << "Required extension " << r << " is supported" << std::endl;
+        std::cout << "Required extension " << n << " is supported" << std::endl;
       }
     }
   }
@@ -112,14 +118,13 @@ class HelloTriangleApplication {
     vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
 
     // Throw an exception if a required validation layer is not available
-    for (auto const& r : validationLayers) {
-      auto position = std::find_if(
-          availableLayers.begin(), availableLayers.end(),
-          [r](VkLayerProperties p) { return p.layerName == std::string(r); });
+    for (auto const& l : validationLayers) {
+      auto position = std::find_if(availableLayers.begin(), availableLayers.end(),
+                                   [l](auto const& p) { return p.layerName == std::string(l); });
       if (position == availableLayers.end()) {
-        throw std::runtime_error("Required layer " + std::string(r) + " is not supported.");
+        throw std::runtime_error("Required layer " + std::string(l) + " is not supported.");
       } else {
-        std::cout << "Required layer " << r << " is supported" << std::endl;
+        std::cout << "Required layer " << l << " is supported" << std::endl;
       }
     }
   }
@@ -128,7 +133,7 @@ class HelloTriangleApplication {
     // Optional information to driver for possible optimisation
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "Hello Triangle";
+    appInfo.pApplicationName = "Vulkan Renderer";
     appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.pEngineName = "No Engine";
     appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
@@ -186,15 +191,26 @@ class HelloTriangleApplication {
     std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
     vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
 
-    // TODO: replace with find position
     // Find index of first queue family which supports graphics commands
-    for (int i = 0; const auto& queueFamily : queueFamilies) {
-      if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-        indices.graphicsFamily = i;
-        break;
-      }
+    auto graphicsPosition = std::find_if(queueFamilies.begin(), queueFamilies.end(),
+                                         [](auto const& p) { return p.queueFlags & VK_QUEUE_GRAPHICS_BIT; });
 
-      i++;
+    VkBool32 presentSupport = false;
+    uint32_t presentIndex{};
+    // Find index of first queue family which supports presenting to our surface. The function takes an index rather than an element
+    while (presentIndex < queueFamilies.size() && !presentSupport) {
+      vkGetPhysicalDeviceSurfaceSupportKHR(device, presentIndex, surface, &presentSupport);
+      if (!presentSupport) {
+        presentIndex++;
+      }
+    }
+
+    if (graphicsPosition != queueFamilies.end()) {
+      indices.graphicsFamily = graphicsPosition - queueFamilies.begin();
+    }
+
+    if (presentSupport) {
+      indices.presentFamily = presentIndex;
     }
 
     return indices;
@@ -221,35 +237,41 @@ class HelloTriangleApplication {
     }
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
-    for (const auto& device : devices) {
-      if (isDeviceSuitable(device)) {
-        physicalDevice = device;
-        break;
-      }
-    }
-    if (physicalDevice == VK_NULL_HANDLE) {
+
+    auto position = std::find_if(devices.begin(), devices.end(),
+                                 [this](auto const& d) { return isDeviceSuitable(d); });
+
+    if (position == devices.end()) {
       throw std::runtime_error("Failed to find a suitable GPU");
     }
+
+    physicalDevice = *position;
   }
 
   void createLogicalDevice() {
     QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 
-    VkDeviceQueueCreateInfo queueCreateInfo{};
-    queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
-    queueCreateInfo.queueCount = 1;
-    float queuePriority = 1.0f;
-    queueCreateInfo.pQueuePriorities = &queuePriority;
+    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+    std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily.value(), indices.presentFamily.value()};
 
-    VkPhysicalDeviceFeatures deviceFeatures{};
+    float queuePriority = 1.0f;
+    for (uint32_t queueFamily : uniqueQueueFamilies) {
+      VkDeviceQueueCreateInfo queueCreateInfo{};
+      queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+      queueCreateInfo.queueFamilyIndex = queueFamily;
+      queueCreateInfo.queueCount = 1;
+      queueCreateInfo.pQueuePriorities = &queuePriority;
+      queueCreateInfos.push_back(queueCreateInfo);
+    }
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 
-    createInfo.pQueueCreateInfos = &queueCreateInfo;
-    createInfo.queueCreateInfoCount = 1;
+    createInfo.queueCreateInfoCount = queueCreateInfos.size();
+    createInfo.pQueueCreateInfos = queueCreateInfos.data();
 
+    // TODO: Specified later
+    VkPhysicalDeviceFeatures deviceFeatures{};
     createInfo.pEnabledFeatures = &deviceFeatures;
 
     createInfo.enabledExtensionCount = 0;
@@ -258,7 +280,7 @@ class HelloTriangleApplication {
     // On latest Vulkan implementations, these values are ignored
     // Set them to be compatible with older versions
     if (enableValidationLayers) {
-      createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+      createInfo.enabledLayerCount = validationLayers.size();
       createInfo.ppEnabledLayerNames = validationLayers.data();
     } else {
       createInfo.enabledLayerCount = 0;
@@ -269,11 +291,21 @@ class HelloTriangleApplication {
     }
 
     vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
+    vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
+  }
+
+  /*----- Surface -----*/
+
+  void createSurface() {
+    if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
+      throw std::runtime_error("Failed to create window surface");
+    }
   }
 
   void initVulkan() {
     createInstance();
     setupDebugMessenger();
+    createSurface();
     pickPhysicalDevice();
     createLogicalDevice();
   }
@@ -285,7 +317,7 @@ class HelloTriangleApplication {
                 VkDebugUtilsMessageTypeFlagsEXT messageType,
                 const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
                 void* pUserData) {
-    std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
+    std::cerr << "[DEBUG] Validation layer: " << pCallbackData->pMessage << std::endl;
     return VK_FALSE;
   }
 
@@ -331,6 +363,7 @@ class HelloTriangleApplication {
       DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
     }
     vkDestroyDevice(device, nullptr);
+    vkDestroySurfaceKHR(instance, surface, nullptr);
     vkDestroyInstance(instance, nullptr);
     glfwDestroyWindow(window);
     glfwTerminate();
