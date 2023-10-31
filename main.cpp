@@ -138,16 +138,23 @@ class HelloTriangleApplication {
   std::vector<VkSemaphore> renderFinishedSemaphores;
   std::vector<VkFence> inFlightFences;
 
+  bool framebufferResized = false;
+
   /*----- GLFW  -----*/
 
   void initWindow() {
     glfwInit();
     // Stop GLFW from creating an OpenGL context
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    // Disable window resizing
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
     window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan Renderer", nullptr, nullptr);
+    glfwSetWindowUserPointer(window, this);
+    glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+  }
+
+  static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
+    auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+    app->framebufferResized = true;
   }
 
   /*----- Extension and validation layer tests -----*/
@@ -305,21 +312,6 @@ class HelloTriangleApplication {
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
     inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     inputAssembly.primitiveRestartEnable = VK_FALSE;
-
-    // ----- Viewport -----
-    /*
-    VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = swapChainExtent.width;
-    viewport.height = swapChainExtent.height;
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-
-    VkRect2D scissor{};
-    scissor.offset = {0, 0};
-    scissor.extent = swapChainExtent;
-    */
 
     VkPipelineViewportStateCreateInfo viewportState{};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -642,7 +634,35 @@ class HelloTriangleApplication {
     swapChainExtent = extent;
   }
 
+  void recreateSwapChain() {
+    int width{0};
+    int height{0};
+    glfwGetFramebufferSize(window, &width, &height);
+
+    while (width == 0 || height == 0) {
+      glfwGetFramebufferSize(window, &width, &height);
+      glfwWaitEvents();
+    }
+
+    vkDeviceWaitIdle(device);
+    cleanupSwapChain();
+    createSwapChain();
+    createImageViews();
+    createFramebuffers();
+  }
+
+  void cleanupSwapChain() {
+    for (auto imageView : swapChainImageViews) {
+      vkDestroyImageView(device, imageView, nullptr);
+    }
+    for (auto framebuffer : swapChainFramebuffers) {
+      vkDestroyFramebuffer(device, framebuffer, nullptr);
+    }
+    vkDestroySwapchainKHR(device, swapChain, nullptr);
+  }
+
   /*----- Image views -----*/
+
   void createImageViews() {
     swapChainImageViews.resize(swapChainImages.size());
     for (size_t i = 0; i < swapChainImages.size(); i++) {
@@ -883,11 +903,21 @@ class HelloTriangleApplication {
   void drawFrame() {
     // Wait for previous frame to finish. Wait for all fences, infinite timeout
     vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-    vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
     // The index of the swap chain image that has become available
     uint32_t imageIndex;
-    vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+
+    VkResult result = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX,
+                                            imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+      recreateSwapChain();
+      return;
+    } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+      throw std::runtime_error("Failed to acquire swap chain image");
+    }
+
+    vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
     vkResetCommandBuffer(commandBuffers[currentFrame], 0);
     recordCommandBuffer(commandBuffers[currentFrame], imageIndex);
@@ -927,7 +957,14 @@ class HelloTriangleApplication {
     // Check swapchain results against success value
     presentInfo.pResults = nullptr;  // Optional
 
-    vkQueuePresentKHR(presentQueue, &presentInfo);
+    result = vkQueuePresentKHR(presentQueue, &presentInfo);
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
+      framebufferResized = false;
+      recreateSwapChain();
+    } else if (result != VK_SUCCESS) {
+      throw std::runtime_error("failed to present swap chain image!");
+    }
 
     currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
   }
@@ -1003,18 +1040,7 @@ class HelloTriangleApplication {
   /*----- Cleanup -----*/
 
   void cleanup() noexcept {
-    if (enableValidationLayers) {
-      DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
-    }
-    for (auto imageView : swapChainImageViews) {
-      vkDestroyImageView(device, imageView, nullptr);
-    }
-    for (auto framebuffer : swapChainFramebuffers) {
-      vkDestroyFramebuffer(device, framebuffer, nullptr);
-    }
-
     vkDestroyCommandPool(device, commandPool, nullptr);
-    vkDestroySwapchainKHR(device, swapChain, nullptr);
     vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
     vkDestroyPipeline(device, graphicsPipeline, nullptr);
     vkDestroyRenderPass(device, renderPass, nullptr);
@@ -1025,7 +1051,14 @@ class HelloTriangleApplication {
       vkDestroyFence(device, inFlightFences[i], nullptr);
     }
 
+    cleanupSwapChain();
+
     vkDestroyDevice(device, nullptr);
+
+    if (enableValidationLayers) {
+      DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
+    }
+
     vkDestroySurfaceKHR(instance, surface, nullptr);
     vkDestroyInstance(instance, nullptr);
 
