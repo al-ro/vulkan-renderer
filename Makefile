@@ -1,7 +1,8 @@
 CFLAGS = -std=c++20 -DDEBUG
 LDFLAGS = -lglfw -lvulkan -ldl -lpthread -lX11 -lXxf86vm -lXrandr -lXi
+STBPATH = /usr/lib/stb-image/
 VulkanRenderer: main.cpp
-	g++ $(CFLAGS) -o VulkanRenderer main.cpp $(LDFLAGS)
+	g++ $(CFLAGS) -o VulkanRenderer main.cpp $(LDFLAGS) -I$(STBPATH)
 
 .PHONY: test clean
 
