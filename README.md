@@ -8,4 +8,4 @@ C++ implementation following https://vulkan-tutorial.com/
 
 - [GLFW](https://www.glfw.org/) for window creation
 - [stb_image.h](https://github.com/nothings/stb) for loading images
-- [tiny-obj-loader.h](https://github.com/tinyobjloader/tinyobjloader) for loading .obj files
+- [tiny_obj_loader.h](https://github.com/tinyobjloader/tinyobjloader) for loading .obj files
