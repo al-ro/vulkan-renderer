@@ -26,6 +26,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "camera.h"
+
 const uint32_t WIDTH = 2000;
 const uint32_t HEIGHT = 1200;
 
@@ -244,6 +246,13 @@ class HelloTriangleApplication {
 
   bool framebufferResized = false;
 
+  Camera camera{
+      1.0f, 0.5f, 2.0f, glm::vec3{0.0f, 0.0f, 1.0f},
+      glm::radians(45.0f), 1.0,
+      0.01f, 10.0f};
+
+  bool mouseDown = false;
+
   /*----- GLFW  -----*/
 
   void initWindow() {
@@ -254,11 +263,40 @@ class HelloTriangleApplication {
     window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan Renderer", nullptr, nullptr);
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+    glfwSetMouseButtonCallback(window, mouseButtonCallback);
+    glfwSetScrollCallback(window, scrollCallback);
+    glfwSetCursorPosCallback(window, mouseMoveCallback);
   }
 
   static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
     auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
     app->framebufferResized = true;
+  }
+
+  static void mouseMoveCallback(GLFWwindow* window, double xpos, double ypos) {
+    auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+    double oldXPos;
+    double oldYPos;
+    glfwGetCursorPos(window, &oldXPos, &oldYPos);
+    if (app->mouseDown) {
+      app->camera.updateCoordinates(glm::vec2{oldXPos - xpos, ypos - oldYPos});
+    }
+  }
+
+  static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
+    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+      auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+      if (action == GLFW_PRESS) {
+        app->mouseDown = true;
+      } else if (action == GLFW_RELEASE) {
+        app->mouseDown = false;
+      }
+    }
+  }
+
+  static void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
+    auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+    app->camera.distance = std::max(0.0, app->camera.distance - 0.01 * yoffset);
   }
 
   /*----- Model Loader -----*/
@@ -851,6 +889,8 @@ class HelloTriangleApplication {
 
     swapChainImageFormat = surfaceFormat.format;
     swapChainExtent = extent;
+
+    camera.aspect = (float)extent.width / (float)extent.height;
   }
 
   void recreateSwapChain() {
@@ -1258,9 +1298,9 @@ class HelloTriangleApplication {
     float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
     UniformBufferObject ubo{};
-    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10.0f);
+    ubo.model = glm::mat4(1.0f);
+    ubo.view = camera.viewMatrix;
+    ubo.proj = camera.projectionMatrix;
     ubo.proj[1][1] *= -1;
 
     memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
@@ -1591,6 +1631,13 @@ class HelloTriangleApplication {
     }
   }
 
+  /*----- Controls -----*/
+
+  void updateCamera() {
+    camera.updatePosition();
+    camera.updateMatrices();
+  }
+
   /*----- Draw -----*/
 
   void drawFrame() {
@@ -1614,6 +1661,8 @@ class HelloTriangleApplication {
 
     vkResetCommandBuffer(commandBuffers[currentFrame], 0);
     recordCommandBuffer(commandBuffers[currentFrame], imageIndex);
+
+    updateCamera();
 
     updateUniformBuffer(currentFrame);
 

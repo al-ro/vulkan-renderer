@@ -4,7 +4,7 @@ STBPATH = /usr/lib/stb-image/
 OBJ_LOADER_PATH = /usr/lib/tiny-obj-loader/
 VulkanRenderer: main.cpp
 	cd shaders && ./compileShaders.sh && cd .. &&\
-	g++ $(CFLAGS) -o VulkanRenderer main.cpp $(LDFLAGS) -I$(STBPATH) -I$(OBJ_LOADER_PATH)
+	g++ $(CFLAGS) -o VulkanRenderer *.cpp $(LDFLAGS) -I$(STBPATH) -I$(OBJ_LOADER_PATH)
 
 .PHONY: test clean
 
