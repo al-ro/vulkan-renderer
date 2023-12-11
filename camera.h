@@ -3,8 +3,7 @@
 /**
  * Orbit camera looking at the origin
  */
-class Camera {
- public:
+struct Camera {
   glm::mat4 viewMatrix;
   glm::mat4 projectionMatrix;
   glm::vec3 position;
