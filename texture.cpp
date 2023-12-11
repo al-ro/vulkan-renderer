@@ -9,7 +9,7 @@
 
 #include "image.h"
 
-Texture::Texture(const VulkanContext& ctx, std::string sourcePath) {
+Texture::Texture(const VulkanContext& ctx, std::string sourcePath) : ctx{ctx} {
   int texWidth;
   int texHeight;
   int texChannels;
@@ -49,10 +49,10 @@ Texture::Texture(const VulkanContext& ctx, std::string sourcePath) {
   vkFreeMemory(ctx.device, stagingBufferMemory, nullptr);
 
   imageView = createImageView(ctx.device, image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
-  createTextureSampler(ctx);
+  createTextureSampler();
 }
 
-void Texture::createTextureSampler(const VulkanContext& ctx) {
+void Texture::createTextureSampler() {
   VkSamplerCreateInfo samplerInfo{};
   samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
   samplerInfo.magFilter = VK_FILTER_LINEAR;
@@ -77,4 +77,11 @@ void Texture::createTextureSampler(const VulkanContext& ctx) {
   if (vkCreateSampler(ctx.device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
     throw std::runtime_error("Failed to create texture sampler");
   }
+}
+
+Texture::~Texture() {
+  vkDestroySampler(ctx.device, sampler, nullptr);
+  vkDestroyImageView(ctx.device, imageView, nullptr);
+  vkDestroyImage(ctx.device, image, nullptr);
+  vkFreeMemory(ctx.device, memory, nullptr);
 }

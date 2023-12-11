@@ -10,13 +10,16 @@ class Texture {
 
   VkImage image;
   VkDeviceMemory memory;
+
   VkImageView imageView;
   VkSampler sampler;
+
+  const VulkanContext& ctx;
 
   Texture() = delete;
   Texture(const VulkanContext& ctx, std::string sourcePath);
   Texture(const Texture& texture) = delete;
   ~Texture();
 
-  void createTextureSampler(const VulkanContext& ctx);
+  void createTextureSampler();
 };

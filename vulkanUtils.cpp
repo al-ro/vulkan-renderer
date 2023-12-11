@@ -253,7 +253,7 @@ void VulkanContext::setupDebugMessenger() {
 }
 
 // Queues are destroyed with device. Physical device is destroyed with instance. Command buffers are destroyed with command pool
-VulkanContext::~VulkanContext() noexcept {
+VulkanContext::~VulkanContext() {
   if (enableValidationLayers) {
     DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
   }
