@@ -5,49 +5,6 @@
 #include <set>
 #include <stdexcept>
 
-/*----- Debgug Messenger -----*/
-
-// These functions are linked dynamically and must be checked for during runtime
-VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
-                                      const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
-                                      const VkAllocationCallbacks* pAllocator,
-                                      VkDebugUtilsMessengerEXT* pDebugMessenger) {
-  auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
-  if (func != nullptr) {
-    return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
-  } else {
-    return VK_ERROR_EXTENSION_NOT_PRESENT;
-  }
-}
-
-void DestroyDebugUtilsMessengerEXT(VkInstance instance,
-                                   VkDebugUtilsMessengerEXT debugMessenger,
-                                   const VkAllocationCallbacks* pAllocator) {
-  auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
-  if (func != nullptr) {
-    func(instance, debugMessenger, pAllocator);
-  }
-}
-
-static VKAPI_ATTR VkBool32 VKAPI_CALL
-debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType,
-              const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
-  std::cerr << "[DEBUG] Validation layer: " << pCallbackData->pMessage << std::endl;
-  return VK_FALSE;
-}
-
-void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo) {
-  createInfo = {};
-  createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-  createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-  createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-  createInfo.pfnUserCallback = debugCallback;
-}
-
 /*----- Extension and validation layer tests -----*/
 
 /* Tests whether required extensions are available */
@@ -87,6 +44,8 @@ void checkValidationLayerSupport() {
   }
 }
 
+/*--------------- VulkanContext ---------------*/
+
 void VulkanContext::initContext(GLFWwindow* window) {
   this->window = window;
   createInstance();
@@ -104,6 +63,8 @@ void VulkanContext::createSurface() {
     throw std::runtime_error("Failed to create window surface");
   }
 }
+
+/*----- Instance -----*/
 
 void VulkanContext::createInstance() {
   // Optional information to driver for possible optimisation
@@ -155,6 +116,8 @@ void VulkanContext::createInstance() {
   }
 }
 
+/*----- Physical device -----*/
+
 void VulkanContext::pickPhysicalDevice() {
   uint32_t deviceCount{};
   vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
@@ -174,6 +137,8 @@ void VulkanContext::pickPhysicalDevice() {
   physicalDevice = *position;
   maxMSAASamples = getMaxUsableSampleCount(physicalDevice);
 }
+
+/*----- Logical device -----*/
 
 void VulkanContext::createLogicalDevice() {
   QueueFamilyIndices indices = findQueueFamilies(physicalDevice, surface);
@@ -225,6 +190,8 @@ void VulkanContext::createLogicalDevice() {
   vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
 }
 
+/*----- Command pool -----*/
+
 void VulkanContext::createCommandPool() {
   QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice, surface);
 
@@ -239,6 +206,8 @@ void VulkanContext::createCommandPool() {
   }
 }
 
+/*----- Debug messenger -----*/
+
 void VulkanContext::setupDebugMessenger() {
   if (!enableValidationLayers) {
     return;
@@ -252,6 +221,8 @@ void VulkanContext::setupDebugMessenger() {
   }
 }
 
+/*----- Cleanup -----*/
+
 // Queues are destroyed with device. Physical device is destroyed with instance. Command buffers are destroyed with command pool
 VulkanContext::~VulkanContext() {
   if (enableValidationLayers) {
@@ -262,7 +233,9 @@ VulkanContext::~VulkanContext() {
   vkDestroyInstance(instance, nullptr);
 }
 
-/*----- Device -----*/
+/*--------------- Vulkan utility functions ---------------*/
+
+/*----- Support and suitability -----*/
 
 bool checkDeviceExtensionSupport(const VkPhysicalDevice& physicalDevice) {
   uint32_t extensionCount;

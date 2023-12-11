@@ -55,6 +55,7 @@ class VulkanContext {
 
   VkDebugUtilsMessengerEXT debugMessenger;
 
+  // The maximum supported multi-sampling count supported by the physical device
   VkSampleCountFlagBits maxMSAASamples;
 
   VulkanContext() = default;
@@ -85,3 +86,17 @@ void submitCommand(const VulkanContext& ctx, VkCommandBuffer& commandBuffer, con
 QueueFamilyIndices findQueueFamilies(const VkPhysicalDevice& physicalDevice, const VkSurfaceKHR& surface);
 
 VkSampleCountFlagBits getMaxUsableSampleCount(const VkPhysicalDevice& physicalDevice);
+
+/*----- Debgug Messenger -----*/
+
+// These functions are linked dynamically and must be checked for during runtime
+VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
+                                      const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger);
+
+void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator);
+
+static VKAPI_ATTR VkBool32 VKAPI_CALL
+debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType,
+              const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData);
+
+void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
