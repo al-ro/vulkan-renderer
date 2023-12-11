@@ -27,6 +27,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "attribute.h"
 #include "camera.h"
 #include "image.h"
 #include "texture.h"
@@ -118,11 +119,9 @@ static std::vector<char> readFile(const std::string& filename) {
   return buffer;
 }
 
-// ----- Application class -----
-
-class HelloTriangleApplication {
+class Renderer {
  public:
-  HelloTriangleApplication() {
+  Renderer() {
     initWindow();
     ctx.initContext(window);
     msaaSamples = std::min(VK_SAMPLE_COUNT_8_BIT, ctx.maxMSAASamples);
@@ -172,10 +171,8 @@ class HelloTriangleApplication {
   std::vector<Vertex> vertices;
   std::vector<uint32_t> indices;
 
-  VkBuffer vertexBuffer;
-  VkDeviceMemory vertexBufferMemory;
-  VkBuffer indexBuffer;
-  VkDeviceMemory indexBufferMemory;
+  std::vector<std::shared_ptr<Attribute<Vertex>>> vertexAttributes;
+  std::vector<std::shared_ptr<Attribute<uint32_t>>> indexAttributes;
 
   std::vector<VkBuffer> uniformBuffers;
   std::vector<VkDeviceMemory> uniformBuffersMemory;
@@ -214,34 +211,34 @@ class HelloTriangleApplication {
   }
 
   static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
-    auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
-    app->framebufferResized = true;
+    auto renderer = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
+    renderer->framebufferResized = true;
   }
 
   static void mouseMoveCallback(GLFWwindow* window, double xpos, double ypos) {
-    auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+    auto renderer = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
     double oldXPos;
     double oldYPos;
     glfwGetCursorPos(window, &oldXPos, &oldYPos);
-    if (app->mouseDown) {
-      app->camera.updateCoordinates(glm::vec2{oldXPos - xpos, ypos - oldYPos});
+    if (renderer->mouseDown) {
+      renderer->camera.updateCoordinates(glm::vec2{oldXPos - xpos, ypos - oldYPos});
     }
   }
 
   static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
-      auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
+      auto renderer = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
       if (action == GLFW_PRESS) {
-        app->mouseDown = true;
+        renderer->mouseDown = true;
       } else if (action == GLFW_RELEASE) {
-        app->mouseDown = false;
+        renderer->mouseDown = false;
       }
     }
   }
 
   static void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
-    auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window));
-    app->camera.distance = std::max(0.0, app->camera.distance - 0.01 * yoffset);
+    auto renderer = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
+    renderer->camera.distance = std::max(0.0, renderer->camera.distance - 0.01 * yoffset);
   }
 
   /*----- Model Loader -----*/
@@ -848,73 +845,6 @@ class HelloTriangleApplication {
 
   /*----- Buffers -----*/
 
-  uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
-    // Get available types of memory
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(ctx.physicalDevice, &memProperties);
-
-    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-      if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-        return i;
-      }
-    }
-
-    throw std::runtime_error("Failed to find suitable memory type");
-  }
-
-  void createVertexBuffer() {
-    VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-
-    // Create a buffer on the GPU which can have data copied into it from the CPU
-    VkBuffer stagingBuffer;
-    VkDeviceMemory stagingBufferMemory;
-    createBuffer(ctx, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 stagingBuffer, stagingBufferMemory);
-
-    // Copy the data from the vertex structure to the mapped memory
-    // Transfer to GPU happens in the background at an unspecified time but guaranteed to be before vkQueueSubmit()
-    void* data;
-    vkMapMemory(ctx.device, stagingBufferMemory, 0, bufferSize, 0, &data);
-    memcpy(data, vertices.data(), (size_t)bufferSize);
-    vkUnmapMemory(ctx.device, stagingBufferMemory);
-
-    // Create a buffer on the GPU which is optimal for rendering
-    createBuffer(ctx, bufferSize,
-                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                 vertexBuffer, vertexBufferMemory);
-
-    copyBuffer(ctx, stagingBuffer, vertexBuffer, bufferSize);
-
-    // Staging buffer is not needed anymore
-    vkDestroyBuffer(ctx.device, stagingBuffer, nullptr);
-    vkFreeMemory(ctx.device, stagingBufferMemory, nullptr);
-  }
-
-  void createIndexBuffer() {
-    VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
-
-    VkBuffer stagingBuffer;
-    VkDeviceMemory stagingBufferMemory;
-    createBuffer(ctx, bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 stagingBuffer, stagingBufferMemory);
-
-    void* data;
-    vkMapMemory(ctx.device, stagingBufferMemory, 0, bufferSize, 0, &data);
-    memcpy(data, indices.data(), (size_t)bufferSize);
-    vkUnmapMemory(ctx.device, stagingBufferMemory);
-
-    createBuffer(ctx, bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBuffer, indexBufferMemory);
-
-    copyBuffer(ctx, stagingBuffer, indexBuffer, bufferSize);
-
-    vkDestroyBuffer(ctx.device, stagingBuffer, nullptr);
-    vkFreeMemory(ctx.device, stagingBufferMemory, nullptr);
-  }
-
   // As uniform buffers are updated often, do not use a staging buffer
   void createUniformBuffers() {
     VkDeviceSize bufferSize = sizeof(UniformBufferObject);
@@ -1006,10 +936,10 @@ class HelloTriangleApplication {
     scissor.extent = swapChainExtent;
     vkCmdSetScissor(drawCommandBuffer, 0, 1, &scissor);
 
-    VkBuffer vertexBuffers[] = {vertexBuffer};
+    VkBuffer vertexBuffers[] = {vertexAttributes[0]->buffer};
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(drawCommandBuffer, 0, 1, vertexBuffers, offsets);
-    vkCmdBindIndexBuffer(drawCommandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdBindIndexBuffer(drawCommandBuffer, indexAttributes[0]->buffer, 0, VK_INDEX_TYPE_UINT32);
 
     vkCmdBindDescriptorSets(drawCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 
@@ -1149,8 +1079,8 @@ class HelloTriangleApplication {
 
     loadModel();
 
-    createVertexBuffer();
-    createIndexBuffer();
+    vertexAttributes.push_back(std::make_shared<Attribute<Vertex>>(ctx, vertices, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT));
+    indexAttributes.push_back(std::make_shared<Attribute<uint32_t>>(ctx, indices, VK_BUFFER_USAGE_INDEX_BUFFER_BIT));
     createUniformBuffers();
     createDescriptorPool();
     createDescriptorSets();
@@ -1193,11 +1123,6 @@ class HelloTriangleApplication {
     vkDestroyDescriptorPool(ctx.device, descriptorPool, nullptr);
     vkDestroyDescriptorSetLayout(ctx.device, descriptorSetLayout, nullptr);
 
-    vkDestroyBuffer(ctx.device, vertexBuffer, nullptr);
-    vkFreeMemory(ctx.device, vertexBufferMemory, nullptr);
-    vkDestroyBuffer(ctx.device, indexBuffer, nullptr);
-    vkFreeMemory(ctx.device, indexBufferMemory, nullptr);
-
     vkDestroySurfaceKHR(ctx.instance, ctx.surface, nullptr);
 
     glfwDestroyWindow(window);
@@ -1206,10 +1131,10 @@ class HelloTriangleApplication {
 };
 
 int main() {
-  HelloTriangleApplication app;
+  Renderer renderer;
 
   try {
-    app.run();
+    renderer.run();
   } catch (const std::exception& e) {
     std::cerr << e.what() << std::endl;
     return EXIT_FAILURE;

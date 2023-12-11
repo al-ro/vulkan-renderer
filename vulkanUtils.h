@@ -89,7 +89,6 @@ VkSampleCountFlagBits getMaxUsableSampleCount(const VkPhysicalDevice& physicalDe
 
 /*----- Debgug Messenger -----*/
 
-// These functions are linked dynamically and must be checked for during runtime
 VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
                                       const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger);
 
